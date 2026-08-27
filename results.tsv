@@ -54,6 +54,9 @@ v34-first-matchup-binary실험	836.35(기준)/818.78(with)/2009.23(기준)/2019.
 v35-asymmetric-alpha실험	836.35(기준)/828.84(max)/2009.23(기준)/2007.04(OOF)		discard	experiment/v35-asymmetric-alpha: 비대칭 시즌 분해 수축 계수 탐색 (alpha_p in [25~40], alpha_b in [60~80]) — docs/v35_asymmetric_alpha_diagnostic.py. 탐색 결과: (P=50, B=50) 대칭 설정이 유일한 전역 최적점(Holdout 836.35, OOF 2009.23)임을 확인. 비대칭 설정 적용 시 (P=30,B=70 -> Holdout 773.04, CB=-1.02), (P=35,B=80 -> Holdout 810.79, CB=-0.62) 등으로 급락하여 alpha=50.0 대칭의 최적성 재확인. 기각 확정.
 v36-3way-stacking실험	836.35(기준)/825.41(with)/2009.23(기준)/2019.00(OOF)		discard	experiment/v36-3way-stacking: LightGBM + CatBoost + HistGradientBoosting 3-Way 스태킹 — docs/v36_xgb_3way_stacking_diagnostic.py. 베이스 점수: LGB=809.27, CB=840.81, HistGB=796.03. 3-Way 스태킹 결과: LGB=1.99, CB=0.07, HGB=2.43. HistGB가 CatBoost 가중치를 잠식(0.07 < 0.15)하면서 홀드아웃이 836.35 -> 825.41 (-10.94)로 급락. 5대 하드 가드레일(Ensemble Balance Fail)에 의해 기각 확정.
 v37-temperature-blend실험	836.35(기준)/846.10(with)/2009.23(기준)/2010.56(OOF)		discard	experiment/v37-temperature-blend: LightGBM과 CatBoost의 비음수 볼록 결합 및 온도 스케일링(T=0.9195, b=-0.0096) — docs/v37_temperature_scaled_blend_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 846.10 (+9.75), (B) OOF score 2009.23 -> 2010.56 (+1.33). 양쪽 게이트 모두 동반 개선되었으나, T=0.9195의 꼬리 확장으로 예측 최솟값이 0.3102(<0.320)로 이탈하여 5대 하드 가드레일(Probability Bounds Fail)에 의해 안전 차단 및 기각.
+v38-safe-calibrated-blend실험	836.35(기준)/828.33(with)/2009.23(기준)/1998.65(OOF)		discard	experiment/v38-safe-calibrated-blend: 보수적 온도 제약(T>=1.00) 하의 볼록 결합 — docs/v38_safe_calibrated_convex_blend_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 828.33 (-8.02), (B) OOF score 2009.23 -> 1998.65 (-10.58). T>=1.00 강제 시 확률 분산(std=0.0441) 과소 수축으로 예측력이 저하됨. 기각 확정.
+
+
 
 
 
