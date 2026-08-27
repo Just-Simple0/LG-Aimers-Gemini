@@ -50,6 +50,9 @@ v30-brier-slsqp-metalearner실험	836.35(기준)/829.19(with)/2009.23(기준)/19
 v31-multiseed-bagging실험	836.35(기준)/835.10(with)/2009.23(기준)/2016.43(OOF)		discard	experiment/v31-multiseed-bagging: v14 챔피언 피처셋(101개) 기반 5-Seed Multi-Bagging 앙상블 (LightGBM 5-seed + CatBoost 5-seed) — docs/v31_multiseed_bagging_diagnostic.py. 단독 모델 결과: LightGBM 5-seed solo 809.27 -> 817.79 (+8.52 상승), CatBoost 5-seed solo 840.81 -> 842.47 (+1.66 상승). 그러나 시드 평균으로 초고상관(>0.995)해진 예측을 무제약 로지스틱 회귀에 입력하자 LGB=4.5689, CB=-0.0632로 CatBoost 가중치 붕괴 발생. 5대 하드 가드레일(Ensemble Balance Fail)에 의해 패키징 차단 및 기각 확정.
 v32-bagged-blend실험	836.35(기준)/844.82(w=0.25)/2009.23(기준)/1976.43(OOF)		discard	experiment/v32-bagged-blend: 5-Seed Bagged LightGBM과 5-Seed Bagged CatBoost의 확률 공간 볼록 결합(Simplex Blend) — docs/v32_bagged_blend_diagnostic.py. 이중게이트 결과: (A) 홀드아웃 836.35 -> 844.82 (+8.47), (B) OOF score 2009.23 -> 1976.43 (-32.80). 단순 가중 평균 결합은 로짓 스케일링이 없어 확률 분산(std=0.040)이 과소 수축되어 OOF 점수 급락. 이중 게이트 (B) 음수로 기각 확정.
 v33-pairwise-matchup실험	836.35(기준)/847.91(with)/2009.23(기준)/2008.47(OOF)		discard	experiment/v33-pairwise-matchup: 투수-타자 1:1 맞대결 통산 이력 3개 피처(pair_history_n, pair_history_posterior, pair_is_first_matchup) 추가 — docs/v33_pairwise_matchup_decomp_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 847.91 (+11.56), (B) OOF score 2009.23 -> 2008.47 (-0.75). LightGBM solo는 809.27 -> 827.34 (+18.07)로 상승했으나, CatBoost solo가 840.81 -> 828.30 (-12.51)으로 하락. 메타러너 계수가 LGB=4.2232로 과도하게 쏠리고 Gate (B) OOF 점수가 음수로 나와 5대 하드 가드레일에 의해 기각 확정.
+v34-first-matchup-binary실험	836.35(기준)/818.78(with)/2009.23(기준)/2019.66(OOF)		discard	experiment/v34-first-matchup-binary: 초면 맞대결 여부(pair_is_first_matchup) 1개 바이너리 피처 단독 추가 — docs/v34_first_matchup_binary_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 818.78 (-17.58), (B) OOF score 2009.23 -> 2019.66 (+10.43). 메타러너 계수: LGB=4.6365, CB=-0.1773 (CatBoost 음수 가중치 붕괴 발생). 홀드아웃 급락 및 5대 하드 가드레일(Ensemble Balance Fail)에 의해 기각 확정.
+
+
 
 
 
