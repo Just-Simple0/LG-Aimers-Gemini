@@ -52,6 +52,9 @@ v32-bagged-blend실험	836.35(기준)/844.82(w=0.25)/2009.23(기준)/1976.43(OOF
 v33-pairwise-matchup실험	836.35(기준)/847.91(with)/2009.23(기준)/2008.47(OOF)		discard	experiment/v33-pairwise-matchup: 투수-타자 1:1 맞대결 통산 이력 3개 피처(pair_history_n, pair_history_posterior, pair_is_first_matchup) 추가 — docs/v33_pairwise_matchup_decomp_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 847.91 (+11.56), (B) OOF score 2009.23 -> 2008.47 (-0.75). LightGBM solo는 809.27 -> 827.34 (+18.07)로 상승했으나, CatBoost solo가 840.81 -> 828.30 (-12.51)으로 하락. 메타러너 계수가 LGB=4.2232로 과도하게 쏠리고 Gate (B) OOF 점수가 음수로 나와 5대 하드 가드레일에 의해 기각 확정.
 v34-first-matchup-binary실험	836.35(기준)/818.78(with)/2009.23(기준)/2019.66(OOF)		discard	experiment/v34-first-matchup-binary: 초면 맞대결 여부(pair_is_first_matchup) 1개 바이너리 피처 단독 추가 — docs/v34_first_matchup_binary_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 818.78 (-17.58), (B) OOF score 2009.23 -> 2019.66 (+10.43). 메타러너 계수: LGB=4.6365, CB=-0.1773 (CatBoost 음수 가중치 붕괴 발생). 홀드아웃 급락 및 5대 하드 가드레일(Ensemble Balance Fail)에 의해 기각 확정.
 v35-asymmetric-alpha실험	836.35(기준)/828.84(max)/2009.23(기준)/2007.04(OOF)		discard	experiment/v35-asymmetric-alpha: 비대칭 시즌 분해 수축 계수 탐색 (alpha_p in [25~40], alpha_b in [60~80]) — docs/v35_asymmetric_alpha_diagnostic.py. 탐색 결과: (P=50, B=50) 대칭 설정이 유일한 전역 최적점(Holdout 836.35, OOF 2009.23)임을 확인. 비대칭 설정 적용 시 (P=30,B=70 -> Holdout 773.04, CB=-1.02), (P=35,B=80 -> Holdout 810.79, CB=-0.62) 등으로 급락하여 alpha=50.0 대칭의 최적성 재확인. 기각 확정.
+v36-3way-stacking실험	836.35(기준)/825.41(with)/2009.23(기준)/2019.00(OOF)		discard	experiment/v36-3way-stacking: LightGBM + CatBoost + HistGradientBoosting 3-Way 스태킹 — docs/v36_xgb_3way_stacking_diagnostic.py. 베이스 점수: LGB=809.27, CB=840.81, HistGB=796.03. 3-Way 스태킹 결과: LGB=1.99, CB=0.07, HGB=2.43. HistGB가 CatBoost 가중치를 잠식(0.07 < 0.15)하면서 홀드아웃이 836.35 -> 825.41 (-10.94)로 급락. 5대 하드 가드레일(Ensemble Balance Fail)에 의해 기각 확정.
+
+
 
 
 
