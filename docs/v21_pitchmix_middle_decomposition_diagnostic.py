@@ -1,0 +1,497 @@
+"""
+v21 후보 실험: Repertoire & Danger-Zone Season Decomposition (구종 구사율 및 실투율 시즌 분해)
+==============================================================================================
+
+배경 및 가설:
+  - v14에서 asof_pitcher_success_rate와 asof_batter_success_rate를
+    과거 시즌 동결치로 분해하여 당해 시즌 베이지안 폼(current_posterior)을 복원함으로써
+    Dacon 976.51점(역대 최고)을 달성함.
+  - 현재 데이터셋에는 success_rate 외에도 수년간의 커리어 누적 통계인:
+    1) 구종 구사율 (asof_pitcher_pitchmix_n, asof_pitcher_fastball_rate, asof_pitcher_breaking_rate, asof_pitcher_offspeed_rate)
+    2) 실투/위험 코스율 (asof_pitcher_middle_rate, asof_batter_middle_rate)
+    이 존재함.
+  - 가설:
+    투수의 구종 레퍼토리(fastball/breaking/offspeed) 및 실투율(middle_rate)을
+    과거 시즌 동결치(H_n, H_rate) 기반으로 무누수 당해 시즌 분해하여
+    당해 시즌 구종 구사율(current_fb, current_br, current_os)과 실투율 사후확률을 산출하면
+    투수의 현재 경기 운영 전략과 컨디션을 포착하여 점수를 추가 향상시킬 수 있을 것임.
+
+기준선: v14 (홀드아웃 836.35, OOF 2009.23, Dacon 실측 976.51)
+
+작성일: 2026-08-27
+"""
+
+import os
+import sys
+import time
+
+# 프로젝트 루트를 sys.path에 추가 (임포트 에러 방지)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
+from catboost import CatBoostClassifier, Pool
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import KFold
+
+from src.script import SeasonDecompositionEncoder, ALPHA
+
+DATA_DIR = "data"
+ID_COL = "row_id"
+TARGET = "control_success"
+CAT_COLS = ["top_bottom", "game_type", "base_state"]
+TK_KEYS = ["balls_before", "strikes_before", "outs_before"]
+
+LGB_PARAMS = dict(
+    learning_rate=0.03, num_leaves=63, min_child_samples=200,
+    subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0,
+    objective="binary", random_state=42, n_jobs=-1, verbosity=-1,
+)
+CB_PARAMS = dict(
+    learning_rate=0.03, depth=8, l2_leaf_reg=3.0,
+    loss_function="Logloss", random_seed=42, verbose=False, thread_count=-1,
+)
+
+
+def make_temporal_season_features(train_df, target_col=TARGET):
+    seasons = sorted(train_df["season"].unique())
+    chunks = []
+    for s in seasons:
+        s_mask = train_df["season"] == s
+        past_mask = train_df["season"] < s
+        if past_mask.sum() == 0:
+            encoder = SeasonDecompositionEncoder()
+            dummy_target = pd.Series([0.5], index=[0])
+            dummy_df = pd.DataFrame({"pitcher_id": [-999], "batter_id": [-999]})
+            encoder.fit(dummy_df, dummy_target)
+            encoder.history_tables = {
+                e: pd.DataFrame({"history_n": pd.Series(dtype=float), "history_success": pd.Series(dtype=float)})
+                for e in ("pitcher", "batter")
+            }
+            chunks.append(encoder.transform(train_df.loc[s_mask]))
+        else:
+            encoder = SeasonDecompositionEncoder().fit(
+                train_df.loc[past_mask], train_df.loc[past_mask, target_col]
+            )
+            chunks.append(encoder.transform(train_df.loc[s_mask]))
+
+    return pd.concat(chunks, axis=0).loc[train_df.index]
+
+
+class MetricSeasonDecompositionEncoder:
+    """임의의 누적 비율 컬럼(구종 구사율, 실투율 등)에 대한 시즌 분해 인코더."""
+
+    def __init__(self, spec_list, alpha=50.0):
+        # spec: (prefix, entity_id_col, count_col, rate_col, global_prior)
+        self.spec_list = spec_list
+        self.alpha = float(alpha)
+        self.history_tables = {}
+
+    def fit(self, df):
+        self.history_tables = {}
+        for prefix, id_col, count_col, rate_col, default_prior in self.spec_list:
+            sub = df[[id_col, count_col, rate_col, "season"]].dropna(subset=[id_col]).copy()
+            if len(sub) == 0:
+                self.history_tables[prefix] = pd.DataFrame()
+                continue
+            
+            # 선수별 마지막 시즌의 최대 count 및 rate 추출
+            # 각 시즌별 마지막 누적치를 찾기 위해 groupby 후 agg
+            sub["__n"] = pd.to_numeric(sub[count_col], errors="coerce").fillna(0.0)
+            sub["__rate"] = pd.to_numeric(sub[rate_col], errors="coerce").fillna(default_prior)
+            sub["__count"] = np.rint(sub["__n"] * sub["__rate"])
+
+            # 선수별 최종 누적치 동결 테이블
+            t = sub.groupby(id_col, sort=False).agg(
+                history_n=("__n", "max"),
+                history_count=("__count", "max"),
+            )
+            self.history_tables[prefix] = t
+        return self
+
+    def transform(self, df):
+        derived = {}
+        for prefix, id_col, count_col, rate_col, default_prior in self.spec_list:
+            t = self.history_tables.get(prefix)
+            if t is None or len(t) == 0:
+                h_n = np.zeros(len(df), dtype=float)
+                h_count = np.zeros(len(df), dtype=float)
+            else:
+                h_n = df[id_col].map(t["history_n"]).fillna(0.0).to_numpy(dtype=float)
+                h_count = df[id_col].map(t["history_count"]).fillna(0.0).to_numpy(dtype=float)
+
+            history_rate = np.divide(
+                h_count, h_n,
+                out=np.full(len(df), default_prior, dtype=float),
+                where=h_n > 0.0,
+            )
+
+            raw_n = pd.to_numeric(df[count_col], errors="coerce").fillna(0.0).to_numpy(dtype=float)
+            cum_n = np.clip(np.rint(raw_n), 0.0, None)
+            raw_r = pd.to_numeric(df[rate_col], errors="coerce").fillna(default_prior).to_numpy(dtype=float)
+            cum_count = np.rint(cum_n * raw_r)
+
+            h_n_adj = np.minimum(h_n, cum_n)
+            h_count_adj = np.minimum(h_count, cum_count)
+
+            curr_n = np.maximum(0.0, cum_n - h_n_adj)
+            curr_count = np.clip(cum_count - h_count_adj, 0.0, curr_n)
+
+            curr_posterior = (curr_count + self.alpha * history_rate) / (curr_n + self.alpha)
+            curr_gap = curr_posterior - history_rate
+
+            derived[f"{prefix}_current_posterior"] = curr_posterior
+            derived[f"{prefix}_current_gap"] = curr_gap
+
+        return pd.DataFrame(derived, index=df.index)
+
+
+def make_temporal_metric_decomposition(train_df, spec_list, alpha=50.0):
+    seasons = sorted(train_df["season"].unique())
+    chunks = []
+    for s in seasons:
+        s_mask = train_df["season"] == s
+        past_mask = train_df["season"] < s
+        if past_mask.sum() == 0:
+            encoder = MetricSeasonDecompositionEncoder(spec_list, alpha=alpha)
+            dummy_df = pd.DataFrame({"pitcher_id": [-999], "batter_id": [-999], "season": [0]})
+            for _, id_c, cnt_c, r_c, def_p in spec_list:
+                dummy_df[cnt_c] = [0]
+                dummy_df[r_c] = [def_p]
+            encoder.fit(dummy_df)
+            chunks.append(encoder.transform(train_df.loc[s_mask]))
+        else:
+            encoder = MetricSeasonDecompositionEncoder(spec_list, alpha=alpha).fit(train_df.loc[past_mask])
+            chunks.append(encoder.transform(train_df.loc[s_mask]))
+
+    return pd.concat(chunks, axis=0).loc[train_df.index]
+
+
+def make_tk_lookup(tk_df):
+    lookup = tk_df.groupby(TK_KEYS).agg(
+        tk_fastball_rate=("pitch_type_group", lambda s: (s == "fastball").mean()),
+        tk_breaking_rate=("pitch_type_group", lambda s: (s == "breaking").mean()),
+        tk_offspeed_rate=("pitch_type_group", lambda s: (s == "offspeed").mean()),
+        tk_zone_speed_mean=("zone_speed", "mean"),
+        tk_rel_speed_mean=("rel_speed", "mean"),
+        tk_spin_rate_mean=("spin_rate", "mean"),
+        tk_horz_break_std=("horz_break", "std"),
+        tk_vert_break_std=("induced_vert_break", "std"),
+        tk_extension_mean=("extension", "mean"),
+    ).reset_index()
+    return lookup
+
+
+def build_base_features(df, global_mean, tk_lookup):
+    df = df.copy()
+
+    df["is_two_strike"] = (df["strikes_before"] >= 2).astype(int)
+    df["is_three_ball"] = (df["balls_before"] >= 3).astype(int)
+    df["is_full_count"] = ((df["balls_before"] >= 3) & (df["strikes_before"] >= 2)).astype(int)
+    df["count_diff"] = df["strikes_before"] - df["balls_before"]
+    df["count_total"] = df["strikes_before"] + df["balls_before"]
+
+    df["win_exp_diff"] = df["home_win_expectancy"] - df["away_win_expectancy"]
+    df["abs_score_diff_pitcher"] = df["score_diff_pitcher_team"].abs()
+    df["late_and_close"] = ((df["inning"] >= 8) & (df["abs_score_diff_pitcher"] <= 1)).astype(int)
+
+    df["is_high_leverage"] = (df["li"] >= 1.5).astype(int)
+    df["li_count_diff"] = df["li"] * df["count_diff"]
+    df["li_late_close"] = df["li"] * df["late_and_close"]
+
+    df["same_hand"] = (df["pitcher_hand"] == df["batter_hand"]).astype(int)
+
+    df["pitcher_cold_start"] = df["asof_pitcher_n"].fillna(0).eq(0).astype(int)
+    df["batter_cold_start"] = df["asof_batter_n"].fillna(0).eq(0).astype(int)
+    df["pitchmix_cold_start"] = df["asof_pitcher_pitchmix_n"].fillna(0).eq(0).astype(int)
+
+    def shrink(rate_col, n_col, k=30):
+        n = df[n_col].fillna(0)
+        r = df[rate_col].fillna(global_mean)
+        return (n * r + k * global_mean) / (n + k)
+
+    df["pitcher_success_rate_smooth"] = shrink("asof_pitcher_success_rate", "asof_pitcher_n")
+    df["batter_success_rate_smooth"] = shrink("asof_batter_success_rate", "asof_batter_n")
+    df["matchup_success_diff"] = df["pitcher_success_rate_smooth"] - df["batter_success_rate_smooth"]
+    df["matchup_middle_diff"] = (
+        df["asof_pitcher_middle_rate"].fillna(global_mean)
+        - df["asof_batter_middle_rate"].fillna(global_mean)
+    )
+
+    df["pitcher_recent_trend"] = df["asof_pitcher_prev1_game_success_rate"] - df["asof_pitcher_prev5_game_success_rate"]
+    df["pitcher_recent_trend3"] = df["asof_pitcher_prev3_game_success_rate"] - df["asof_pitcher_prev5_game_success_rate"]
+
+    fb = df["asof_pitcher_fastball_rate"].fillna(0)
+    br = df["asof_pitcher_breaking_rate"].fillna(0)
+    os_ = df["asof_pitcher_offspeed_rate"].fillna(0)
+    df["pitchmix_max_share"] = np.maximum.reduce([fb, br, os_])
+
+    df["month_sin"] = np.sin(2 * np.pi * df["game_month"] / 12)
+    df["month_cos"] = np.cos(2 * np.pi * df["game_month"] / 12)
+    df["dow_sin"] = np.sin(2 * np.pi * df["game_dayofweek"] / 7)
+    df["dow_cos"] = np.cos(2 * np.pi * df["game_dayofweek"] / 7)
+
+    tk_cols = [c for c in tk_lookup.columns if c.startswith("tk_")]
+    tk_lk = tk_lookup[TK_KEYS + tk_cols].copy()
+    for k in TK_KEYS:
+        tk_lk[k] = tk_lk[k].astype(df[k].dtype)
+    orig_index = df.index
+    df = df.merge(tk_lk, on=TK_KEYS, how="left", validate="many_to_one", sort=False)
+    df.index = orig_index
+    df["tk_fastball_dev"] = fb - df["tk_fastball_rate"]
+    df["tk_breaking_dev"] = br - df["tk_breaking_rate"]
+    df["tk_offspeed_dev"] = os_ - df["tk_offspeed_rate"]
+
+    return df.drop(columns=[ID_COL], errors="ignore")
+
+
+def kfold_oof(X_lgb, X_cb, y, lgb_n_est, cb_n_est, cat_idx, n_splits=5, seed=42):
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    X_lgb_r = X_lgb.reset_index(drop=True)
+    X_cb_r = X_cb.reset_index(drop=True)
+    y_r = y.reset_index(drop=True)
+
+    lgb_oof = np.zeros(len(y_r))
+    cb_oof = np.zeros(len(y_r))
+
+    for fold_i, (tr_idx, oof_idx) in enumerate(kf.split(X_lgb_r)):
+        ft = time.time()
+        m_lgb = lgb.LGBMClassifier(n_estimators=lgb_n_est, **LGB_PARAMS)
+        m_lgb.fit(X_lgb_r.iloc[tr_idx], y_r.iloc[tr_idx])
+        lgb_oof[oof_idx] = m_lgb.predict_proba(X_lgb_r.iloc[oof_idx])[:, 1]
+
+        tp = Pool(X_cb_r.iloc[tr_idx], y_r.iloc[tr_idx], cat_features=cat_idx)
+        m_cb = CatBoostClassifier(iterations=cb_n_est, **CB_PARAMS)
+        m_cb.fit(tp)
+        cb_oof[oof_idx] = m_cb.predict_proba(X_cb_r.iloc[oof_idx])[:, 1]
+        print(f"    KFold {fold_i+1}/{n_splits} :: {time.time()-ft:.1f}s")
+
+    return lgb_oof, cb_oof, y_r.to_numpy()
+
+
+def brier_skill_score(y_true, y_pred):
+    bs = np.mean((y_pred - y_true) ** 2)
+    r = y_true.mean()
+    return max(0, 100000 * (1 - bs / (r * (1 - r))))
+
+
+def run_one(label, train_fe, val_fe, all_features):
+    print(f"\n{'='*60}")
+    print(f"실험: {label}")
+    print(f"  피처 수: {len(all_features)}")
+    print(f"{'='*60}")
+    t0 = time.time()
+
+    is_val_mask = train_fe["season"] == 2024
+    X_train_full = train_fe.loc[~is_val_mask, all_features]
+    y_train_full = train_fe.loc[~is_val_mask, TARGET]
+    X_val_fe = val_fe[all_features]
+    y_val = val_fe[TARGET]
+
+    cat_idx = [all_features.index(c) for c in CAT_COLS if c in all_features]
+
+    def lgb_df(df):
+        d = df.copy()
+        for c in CAT_COLS:
+            if c in d.columns:
+                d[c] = d[c].astype("category")
+        return d
+
+    def cb_df(df):
+        d = df.copy()
+        for c in CAT_COLS:
+            if c in d.columns:
+                d[c] = d[c].astype(str)
+        return d
+
+    X_tr_lgb = lgb_df(X_train_full)
+    X_tr_cb = cb_df(X_train_full)
+    X_val_lgb = lgb_df(X_val_fe)
+    X_val_cb = cb_df(X_val_fe)
+
+    # Step 1: early stopping
+    t = time.time()
+    lgb_val_model = lgb.LGBMClassifier(n_estimators=2000, **LGB_PARAMS)
+    lgb_val_model.fit(
+        X_tr_lgb, y_train_full,
+        eval_set=[(X_val_lgb, y_val)],
+        callbacks=[lgb.early_stopping(50, verbose=False)],
+    )
+    BEST_LGB = lgb_val_model.best_iteration_
+    print(f"  LGB best_iteration={BEST_LGB} :: {time.time()-t:.1f}s")
+
+    t = time.time()
+    cb_val_model = CatBoostClassifier(iterations=3000, early_stopping_rounds=50, **CB_PARAMS)
+    cb_val_model.fit(
+        Pool(X_tr_cb, y_train_full, cat_features=cat_idx),
+        eval_set=Pool(X_val_cb, y_val, cat_features=cat_idx),
+        use_best_model=True,
+    )
+    BEST_CB = cb_val_model.get_best_iteration() + 1
+    print(f"  CB  best_iteration={BEST_CB} :: {time.time()-t:.1f}s")
+
+    # Step 2: 단독 점수
+    p_lgb_val = lgb_val_model.predict_proba(X_val_lgb)[:, 1]
+    p_cb_val = cb_val_model.predict_proba(X_val_cb)[:, 1]
+    score_lgb = brier_skill_score(y_val.values, p_lgb_val)
+    score_cb = brier_skill_score(y_val.values, p_cb_val)
+    print(f"  LGB solo: {score_lgb:.2f}  CB solo: {score_cb:.2f}")
+
+    # Step 3: KFold OOF
+    print("  KFold OOF 생성 중...")
+    lgb_oof, cb_oof, y_oof = kfold_oof(
+        X_tr_lgb, X_tr_cb, y_train_full, BEST_LGB, BEST_CB, cat_idx
+    )
+
+    # Step 4: 메타러너
+    stack = LogisticRegression(random_state=42, max_iter=1000)
+    stack.fit(np.column_stack([lgb_oof, cb_oof]), y_oof)
+
+    preds_A = stack.predict_proba(np.column_stack([p_lgb_val, p_cb_val]))[:, 1]
+    score_A = brier_skill_score(y_val.values, preds_A)
+
+    preds_B = stack.predict_proba(np.column_stack([lgb_oof, cb_oof]))[:, 1]
+    score_B = brier_skill_score(y_oof, preds_B)
+
+    elapsed = time.time() - t0
+    print(f"\n  [결과] {label}")
+    print(f"    (A) 홀드아웃  : {score_A:.2f}")
+    print(f"    (B) OOF score: {score_B:.2f}")
+    print(f"    소요시간      : {elapsed/60:.1f}분")
+
+    return {
+        "label": label,
+        "n_features": len(all_features),
+        "lgb_best_iter": BEST_LGB,
+        "cb_best_iter": BEST_CB,
+        "lgb_solo": score_lgb,
+        "cb_solo": score_cb,
+        "score_A_holdout": score_A,
+        "score_B_oof": score_B,
+        "elapsed_min": elapsed / 60,
+    }
+
+
+def main():
+    print("=" * 70)
+    print("v21 후보 실험: Repertoire & Danger-Zone Season Decomposition")
+    print("기준선: v14 (홀드아웃 836.35, OOF 2009.23, Dacon 실측 976.51)")
+    print("=" * 70)
+
+    # 1. 데이터 로드
+    test_cols = pd.read_csv(os.path.join(DATA_DIR, "test.csv"), encoding="utf-8-sig", nrows=0).columns
+    FEATURES_BASE = [c for c in test_cols if c != ID_COL]
+
+    train_full = pd.read_csv(os.path.join(DATA_DIR, "train.csv"), encoding="utf-8-sig",
+                             usecols=FEATURES_BASE + [TARGET])
+    GLOBAL_MEAN_VAL = train_full.loc[train_full["season"] != 2024, TARGET].mean()
+    print(f"train: {train_full.shape}  GLOBAL_MEAN_VAL={GLOBAL_MEAN_VAL:.6f}")
+
+    # 2. Trackman lookup (검증용, season <= 2023)
+    tk_raw = pd.read_csv(
+        os.path.join(DATA_DIR, "trackman_history.csv"), encoding="utf-8-sig",
+        usecols=["season"] + TK_KEYS + ["pitch_type_group", "rel_speed", "spin_rate",
+                                        "induced_vert_break", "horz_break",
+                                        "extension", "zone_speed"],
+    )
+    TK_LOOKUP_VAL = make_tk_lookup(tk_raw[tk_raw["season"] <= 2023])
+
+    # 3. v14 기준 Season Decomposition (Success Rate)
+    print("\nv14 제구 성공률 Season Decomposition 생성 중...")
+    train_split = train_full[train_full["season"] <= 2023]
+    season_decomp_train = make_temporal_season_features(train_split, TARGET)
+
+    encoder_val = SeasonDecompositionEncoder().fit(train_split, train_split[TARGET])
+    val_split = train_full[train_full["season"] == 2024]
+    season_decomp_val = encoder_val.transform(val_split)
+
+    season_decomp_all = pd.concat([season_decomp_train, season_decomp_val], axis=0).loc[train_full.index]
+    base_fe = build_base_features(train_full, GLOBAL_MEAN_VAL, TK_LOOKUP_VAL)
+    fe_v14 = pd.concat([base_fe, season_decomp_all], axis=1)
+
+    # 4. v21 추가: 구종 구사율 및 실투율 시즌 분해
+    print("v21 구종 구사율 & 실투율 Season Decomposition 생성 중...")
+    METRIC_SPECS = [
+        ("season_pitcher_fb", "pitcher_id", "asof_pitcher_pitchmix_n", "asof_pitcher_fastball_rate", 0.45),
+        ("season_pitcher_br", "pitcher_id", "asof_pitcher_pitchmix_n", "asof_pitcher_breaking_rate", 0.35),
+        ("season_pitcher_os", "pitcher_id", "asof_pitcher_pitchmix_n", "asof_pitcher_offspeed_rate", 0.20),
+        ("season_pitcher_middle", "pitcher_id", "asof_pitcher_n", "asof_pitcher_middle_rate", 0.15),
+        ("season_batter_middle", "batter_id", "asof_batter_n", "asof_batter_middle_rate", 0.15),
+    ]
+
+    metric_decomp_train = make_temporal_metric_decomposition(train_split, METRIC_SPECS, alpha=50.0)
+    metric_encoder_val = MetricSeasonDecompositionEncoder(METRIC_SPECS, alpha=50.0).fit(train_split)
+    metric_decomp_val = metric_encoder_val.transform(val_split)
+    metric_decomp_all = pd.concat([metric_decomp_train, metric_decomp_val], axis=0).loc[train_full.index]
+
+    # 당해 시즌 실투율 매치업 차분
+    metric_decomp_all["matchup_current_middle_diff"] = (
+        metric_decomp_all["season_pitcher_middle_current_posterior"] - metric_decomp_all["season_batter_middle_current_posterior"]
+    )
+
+    fe_v21 = pd.concat([fe_v14, metric_decomp_all], axis=1)
+
+    # 피처 목록 구성
+    NEW_COLS_V14 = [c for c in fe_v14.columns if c not in train_full.columns]
+    ALL_FEATURES_V14 = CAT_COLS + [c for c in FEATURES_BASE if c not in CAT_COLS] + NEW_COLS_V14
+
+    NEW_COLS_V21 = [c for c in fe_v21.columns if c not in train_full.columns]
+    ALL_FEATURES_V21 = CAT_COLS + [c for c in FEATURES_BASE if c not in CAT_COLS] + NEW_COLS_V21
+
+    for c in CAT_COLS:
+        fe_v14[c] = fe_v14[c].astype("category")
+        fe_v21[c] = fe_v21[c].astype("category")
+
+    val_fe_v14 = fe_v14[fe_v14["season"] == 2024].copy()
+    val_fe_v21 = fe_v21[fe_v21["season"] == 2024].copy()
+
+    # 5. 실험 실행
+    results = []
+    res_v14 = run_one(
+        "WITHOUT (v14 기준선, 101개 피처)",
+        fe_v14, val_fe_v14, ALL_FEATURES_V14,
+    )
+    results.append(res_v14)
+
+    res_v21 = run_one(
+        "WITH (v21 구종&실투 시즌분해 11개 추가, 112개 피처)",
+        fe_v21, val_fe_v21, ALL_FEATURES_V21,
+    )
+    results.append(res_v21)
+
+    # 6. 최종 요약
+    diff_A = res_v21["score_A_holdout"] - res_v14["score_A_holdout"]
+    diff_B = res_v21["score_B_oof"] - res_v14["score_B_oof"]
+
+    print("\n" + "=" * 70)
+    print("최종 결과 요약 (Repertoire & Danger-Zone Season Decomposition)")
+    print("=" * 70)
+    print(f"{'항목':<35} {'v14(WITHOUT)':>12} {'v21(WITH)':>12} {'diff':>10}")
+    print(f"{'피처 수':<35} {res_v14['n_features']:>12} {res_v21['n_features']:>12}")
+    print(f"{'LGB solo':<35} {res_v14['lgb_solo']:>12.2f} {res_v21['lgb_solo']:>12.2f}")
+    print(f"{'CB solo':<35} {res_v14['cb_solo']:>12.2f} {res_v21['cb_solo']:>12.2f}")
+    print(f"{'(A) 홀드아웃':<35} {res_v14['score_A_holdout']:>12.2f} {res_v21['score_A_holdout']:>12.2f} {diff_A:>+10.2f}")
+    print(f"{'(B) OOF score':<35} {res_v14['score_B_oof']:>12.2f} {res_v21['score_B_oof']:>12.2f} {diff_B:>+10.2f}")
+
+    if diff_A > 0.0 and diff_B > 0.0:
+        verdict = "채택 후보 ✅  이중 게이트(A/B) 동반 개선 확인 (Dacon 재제출 권장)"
+    elif diff_B > 0.0:
+        verdict = "보류 ⚠️   OOF만 소폭 개선, 홀드아웃 미개선"
+    else:
+        verdict = "기각 ❌  독립 게이트 음수"
+
+    print(f"\n판정: {verdict}")
+    print("=" * 70)
+
+    out = "docs/v21_pitchmix_middle_results.csv"
+    df_res = pd.DataFrame(results)
+    df_res["diff_A"] = diff_A
+    df_res["diff_B"] = diff_B
+    df_res["verdict"] = verdict
+    df_res.to_csv(out, index=False)
+    print(f"결과 저장: {out}")
+
+
+if __name__ == "__main__":
+    main()
