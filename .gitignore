@@ -17,6 +17,7 @@ catboost_info/
 output/
 *.log
 docs/*.log
-*.csv
-!data/*.csv
+data/*.csv
+data/*.parquet
+submissions/.omc/
 
