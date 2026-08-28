@@ -1,0 +1,2 @@
+w_lgb,w_cb,intercept,p_min,p_max,p_std,holdout,oof,diff_A,diff_B,guardrail_status,guardrail_msg,elapsed_min,experiment
+4.574572462628556,-0.06826582663539213,-2.2644367475474327,0.325,0.6863009022197701,0.049500033219930115,827.1777130525959,2023.8491815092518,-9.172286947404132,14.619181509251803,FAIL ❌,❌ [FAIL] CatBoost 가중치 붕괴 (-0.0683 < 0.15). 단일 모델 쏠림으로 인한 앙상블 완충 상실 위험! 제출 금지.,36.24043241739273,Exp 1 (v55-10fold-3seed-bagging)
