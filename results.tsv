@@ -82,8 +82,12 @@ v62-cb-l2reg5실험	836.35(기준)/832.38(with)/2009.23(기준)/2014.50(OOF)		di
 v63-lgb-l2reg3실험	836.35(기준)/843.55(with)/2009.23(기준)/2016.92(OOF)	970.8716321434	discard	experiment/v63-lgb-l2reg3: 10-Fold CV + LGB L2(3.0) + 클리핑. Dacon 실측 970.87점 확인. 10-Fold OOF의 미래 시즌 과최적화 및 클리핑 손실 규명으로 최종 기각.
 v70-grand-champion실험	836.35(기준)/844.31(with)/2009.23(기준)/2013.27(OOF)	947.0189240508	discard	experiment/v70-grand-champion: SVD 투수-타자 잠재 상성 임베딩 + 5-Fold Stacking + Beta Calibration. Dacon 실측 947.01점 확인. SVD 희소성으로 인한 Resolution(분별력) 희석 및 Beta 캘리브레이션의 분산 수축 확인으로 최종 기각. v14-champion이 최종 챔피언으로 확정.
 
-
-v64-lgb-subsample07실험	836.35(기준)/851.23(with)/2009.23(기준)/1997.07(OOF)		discard	experiment/v64-lgb-subsample07: LightGBM Subsample Tuning (subsample=0.7, subsample_freq=1) 10-Fold CV Stacking — docs/v62_to_v65_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 851.23 (+14.88), (B) OOF score 2009.23 -> 1997.07 (-12.16). OOF 점수 급락으로 기각 확정.
+v71-ext1-bradley-terry실험	836.35(기준)/838.84(with)/2009.23(기준)/2009.37(OOF)		keep	experiment/v71-ext1-bradley-terry: Bradley-Terry 매치업 잠재 능력 모델(arXiv:1701.08055) + Empirical Bayes 수축. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 838.84 (+2.49), (B) 5-Fold OOF 2009.23 -> 2009.37 (+0.14). 메타러너 계수: LGB=4.06, CB=0.43 (양수 유지). SVD의 0-수축 결함을 수학적으로 극복한 유일한 매치업 모델로 채택 후보 확정.
+v72-ext2-pitch-teacher실험	836.35(기준)/833.57(with)/2009.23(기준)/2008.82(OOF)		discard	experiment/v72-ext2-pitch-teacher: Trackman 상황 기반 구종 다중분류 교사모델(Statistical Matching). 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 833.57 (-2.78), (B) OOF 2009.23 -> 2008.82 (-0.41). 기존 트랙맨 룩업과 정보 중복으로 기각 확정.
+v73-ext3-stuff-control실험	836.35(기준)/843.40(with)/2009.23(기준)/2008.55(OOF)		discard	experiment/v73-ext3-stuff-control: Expected Stuff vs Control 잔차 분해(Command Index). 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 843.40 (+7.05), (B) OOF 2009.23 -> 2008.55 (-0.68). OOF 점수 하락으로 기각 확정.
+v74-ext4-tabpfn실험	836.35(기준)/836.35(with)/2009.23(기준)/2009.23(OOF)		discard	experiment/v74-ext4-tabpfn: TabPFN 표 파운데이션 모델 제약 분석. 147만 행 규모 메모리 OOM 및 10분 오프라인 zip 추론 제약 부적합으로 기각 확정.
+v75-ext5-local-isotonic실험	836.35(기준)/817.65(with)/2009.23(기준)/2009.23(OOF)		discard	experiment/v75-ext5-local-isotonic: Count-Conditioned Local Isotonic Calibration(arXiv:2509.23665). 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 817.65 (-18.70 폭락). 국소 계단 현상으로 인한 Brier Score 훼손으로 기각 확정.
+v76-ext6-workload-decay실험	836.35(기준)/831.95(with)/2009.23(기준)/2012.14(OOF)		discard	experiment/v76-ext6-workload-decay: Bayesian Inning Workload / Fatigue Decay 모델(arXiv:2209.07274). 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 831.95 (-4.40), (B) OOF 2009.23 -> 2012.14 (+2.91). 홀드아웃 하락으로 기각 확정.
 
 
 
