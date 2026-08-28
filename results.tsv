@@ -74,8 +74,11 @@ v54-extratrees-10fold실험	836.35(기준)/846.10(with)/2009.23(기준)/1968.51(
 v55-10fold-3seed-bagging실험	836.35(기준)/827.18(with)/2009.23(기준)/2023.85(OOF)		discard	experiment/v55-10fold-3seed-bagging: 10-Fold CV와 3-Seed Multi-Bagging 결합 — docs/v55_to_v58_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 827.18 (-9.17), (B) OOF score 2009.23 -> 2023.85 (+14.62). 메타러너 계수: LGB=4.57, CB=-0.07 (시드 평균화로 인한 초고상관 다중공선성으로 CatBoost 음수 붕괴). 기각 확정.
 v56-lgb-maxdepth7실험	836.35(기준)/851.62(with)/2009.23(기준)/2007.78(OOF)		discard	experiment/v56-lgb-maxdepth7: LightGBM Max Depth Regulation (max_depth=7) 10-Fold CV Stacking — docs/v56_to_v60_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 851.62 (+15.27 폭등), (B) OOF score 2009.23 -> 2007.78 (-1.45). 메타러너 계수: LGB=3.58, CB=0.91. 홀드아웃이 대폭 개선되었으나 OOF 점수가 미세 음수(-1.45)로 나와 이중게이트 탈락. 기각 확정.
 v57-lgb-minchild300실험	836.35(기준)/843.85(with)/2009.23(기준)/2029.37(OOF)		discard	experiment/v57-lgb-minchild300: LightGBM Min Child Samples Tuning (min_child_samples=300) 10-Fold CV Stacking — docs/v56_to_v60_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 843.85 (+7.50), (B) OOF score 2009.23 -> 2029.37 (+20.14). 메타러너 계수: LGB=4.2502 (4.20 상한선 초과 과대 증폭). 가드레일에 의해 기각 확정.
-v58-lgb-colsample07	planned		planned	experiment/v58-lgb-colsample07: LightGBM Feature Subsample (colsample_bytree=0.7) 10-Fold CV Stacking.
-v59-cb-depth7	planned		planned	experiment/v59-cb-depth7: CatBoost Depth Tuning (depth=7) 10-Fold CV Stacking.
+v58-lgb-colsample07실험	836.35(기준)/815.01(with)/2009.23(기준)/2031.18(OOF)		discard	experiment/v58-lgb-colsample07: LightGBM Feature Subsample (colsample_bytree=0.7) 10-Fold CV Stacking — docs/v58_to_v61_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 815.01 (-21.34), (B) OOF score 2009.23 -> 2031.18 (+21.95). 메타러너 계수: LGB=4.41, CB=0.08 (CatBoost 가중치 붕괴). 기각 확정.
+v59-cb-depth7실험	836.35(기준)/827.74(with)/2009.23(기준)/2014.24(OOF)		discard	experiment/v59-cb-depth7: CatBoost Depth Tuning (depth=7) 10-Fold CV Stacking — docs/v58_to_v61_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 827.74 (-8.61), (B) OOF score 2009.23 -> 2014.24 (+5.01). 홀드아웃 하락으로 기각 확정.
+v60-sym-depth7	planned		planned	experiment/v60-sym-depth7: Symmetric Depth Regularization (LGB max_depth=7 + CB depth=7) 10-Fold CV Stacking.
+v61-lgb-l1-reg	planned		planned	experiment/v61-lgb-l1-reg: LightGBM L1 Regularization (reg_alpha=0.5) 10-Fold CV Stacking.
+
 
 
 
