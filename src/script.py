@@ -16,6 +16,11 @@ ENTITY_SPECS = {
 }
 
 
+def logit(p, eps=1e-4):
+    p_c = np.clip(p, eps, 1.0 - eps)
+    return np.log(p_c / (1.0 - p_c))
+
+
 def sigmoid(z):
     return 1.0 / (1.0 + np.exp(-np.clip(z, -15.0, 15.0)))
 
@@ -87,100 +92,55 @@ class SeasonDecompositionEncoder:
 
 
 # =======================
-# 2. LatentMatchupSVDEncoder (순수 딕셔너리 직렬화)
+# 2. BradleyTerryEBEncoder (순수 딕셔너리 직렬화)
 # =======================
 
-class LatentMatchupSVDEncoder:
-    def __init__(self, n_components=8, alpha=30.0, pitcher_map=None, batter_map=None, pitcher_factors=None, batter_factors=None, global_prior=0.5):
-        self.n_components = n_components
-        self.alpha = alpha
-        self.pitcher_map = pitcher_map or {}
-        self.batter_map = batter_map or {}
-        self.pitcher_factors = pitcher_factors
-        self.batter_factors = batter_factors
-        self.global_prior = global_prior
+class BradleyTerryEBEncoder:
+    def __init__(self, alpha_p=50.0, alpha_b=50.0, alpha_pb=20.0, mu_0=0.0, r_0=0.52, pitcher_theta=None, batter_theta=None, matchup_delta=None):
+        self.alpha_p = alpha_p
+        self.alpha_b = alpha_b
+        self.alpha_pb = alpha_pb
+        self.mu_0 = mu_0
+        self.r_0 = r_0
+        self.pitcher_theta = pitcher_theta or {}
+        self.batter_theta = batter_theta or {}
+        self.matchup_delta = matchup_delta or {}
 
     @classmethod
     def from_dict(cls, data):
         return cls(
-            n_components=data["n_components"],
-            alpha=data["alpha"],
-            pitcher_map=data["pitcher_map"],
-            batter_map=data["batter_map"],
-            pitcher_factors=data["pitcher_factors"],
-            batter_factors=data["batter_factors"],
-            global_prior=data["global_prior"],
+            alpha_p=data["alpha_p"],
+            alpha_b=data["alpha_b"],
+            alpha_pb=data["alpha_pb"],
+            mu_0=data["mu_0"],
+            r_0=data["r_0"],
+            pitcher_theta=data["pitcher_theta"],
+            batter_theta=data["batter_theta"],
+            matchup_delta=data["matchup_delta"],
         )
 
     def transform(self, df):
         p_ids = df["pitcher_id"].to_numpy()
         b_ids = df["batter_id"].to_numpy()
 
-        dots = np.zeros(len(df), dtype=float)
-        p_f1 = np.zeros(len(df), dtype=float)
-        p_f2 = np.zeros(len(df), dtype=float)
-        b_f1 = np.zeros(len(df), dtype=float)
-        b_f2 = np.zeros(len(df), dtype=float)
+        p_th = np.array([self.pitcher_theta.get(pid, 0.0) for pid in p_ids], dtype=float)
+        b_th = np.array([self.batter_theta.get(bid, 0.0) for bid in b_ids], dtype=float)
 
-        if self.pitcher_factors is not None and self.batter_factors is not None:
-            for i in range(len(df)):
-                pid = p_ids[i]
-                bid = b_ids[i]
-                p_idx = self.pitcher_map.get(pid)
-                b_idx = self.batter_map.get(bid)
+        delta = np.zeros(len(df), dtype=float)
+        for i in range(len(df)):
+            pair = (p_ids[i], b_ids[i])
+            delta[i] = self.matchup_delta.get(pair, 0.0)
 
-                if p_idx is not None and b_idx is not None:
-                    u = self.pitcher_factors[p_idx]
-                    v = self.batter_factors[b_idx]
-                    dots[i] = np.dot(u, v)
-                    p_f1[i] = u[0]
-                    p_f2[i] = u[1]
-                    b_f1[i] = v[0]
-                    b_f2[i] = v[1]
-                elif p_idx is not None:
-                    u = self.pitcher_factors[p_idx]
-                    p_f1[i] = u[0]
-                    p_f2[i] = u[1]
-                elif b_idx is not None:
-                    v = self.batter_factors[b_idx]
-                    b_f1[i] = v[0]
-                    b_f2[i] = v[1]
+        total_logodds = self.mu_0 + p_th - b_th + delta
+        prob = sigmoid(total_logodds)
 
         return pd.DataFrame({
-            "svd_matchup_dot": dots,
-            "svd_pitcher_f1": p_f1,
-            "svd_pitcher_f2": p_f2,
-            "svd_batter_f1": b_f1,
-            "svd_batter_f2": b_f2,
+            "bt_pitcher_theta": p_th,
+            "bt_batter_theta": b_th,
+            "bt_matchup_delta": delta,
+            "bt_matchup_logodds": total_logodds,
+            "bt_expected_prob": prob,
         }, index=df.index)
-
-
-# =======================
-# 3. BetaCalibrator (순수 수식 계산)
-# =======================
-
-class BetaCalibrator:
-    def __init__(self, a=1.0, b=1.0, c=0.0, eps=1e-5):
-        self.a = a
-        self.b = b
-        self.c = c
-        self.eps = eps
-
-    @classmethod
-    def from_dict(cls, data):
-        return cls(
-            a=data["a_"],
-            b=data["b_"],
-            c=data["c_"],
-            eps=data.get("eps", 1e-5),
-        )
-
-    def predict(self, s):
-        s_safe = np.clip(np.asarray(s, dtype=float), self.eps, 1.0 - self.eps)
-        x1 = np.log(s_safe)
-        x2 = -np.log(1.0 - s_safe)
-        logit_p = self.a * x1 + self.b * x2 + self.c
-        return sigmoid(logit_p)
 
 
 # =======================
@@ -201,7 +161,7 @@ def load_sample_submission(path):
     return df
 
 
-def build_features(df, global_mean, tk_lookup, season_encoder, svd_encoder=None):
+def build_features(df, global_mean, tk_lookup, season_encoder, bt_encoder=None):
     df = df.copy()
 
     # 1. 기본 파생 피처
@@ -266,10 +226,10 @@ def build_features(df, global_mean, tk_lookup, season_encoder, svd_encoder=None)
     season_fe = season_encoder.transform(df)
     res = pd.concat([df, season_fe], axis=1)
 
-    # 3. SVD Latent Matchup 피처
-    if svd_encoder is not None:
-        svd_fe = svd_encoder.transform(df)
-        res = pd.concat([res, svd_fe], axis=1)
+    # 3. Bradley-Terry Empirical Bayes 피처
+    if bt_encoder is not None:
+        bt_fe = bt_encoder.transform(df)
+        res = pd.concat([res, bt_fe], axis=1)
 
     return res.drop(columns=[ID_COL], errors="ignore")
 
@@ -316,8 +276,7 @@ def main():
     tk_lookup = artifact["tk_lookup"]
     
     season_encoder = SeasonDecompositionEncoder.from_dict(artifact["season_encoder_data"])
-    svd_encoder = LatentMatchupSVDEncoder.from_dict(artifact["svd_encoder_data"]) if "svd_encoder_data" in artifact else None
-    beta_calibrator = BetaCalibrator.from_dict(artifact["beta_calibrator_data"]) if "beta_calibrator_data" in artifact else None
+    bt_encoder = BradleyTerryEBEncoder.from_dict(artifact["bt_encoder_data"]) if "bt_encoder_data" in artifact else None
 
     print(f" OK. n_features={len(all_features)}")
 
@@ -330,7 +289,7 @@ def main():
     # ---- 전처리 & 피처 엔지니어링 ----
     print("Build features...")
     ids = test[ID_COL].tolist()
-    X = build_features(test, global_mean, tk_lookup, season_encoder, svd_encoder=svd_encoder)
+    X = build_features(test, global_mean, tk_lookup, season_encoder, bt_encoder=bt_encoder)
     X = X[all_features]
     for c in cat_cols:
         X[c] = X[c].astype("category")
@@ -339,17 +298,13 @@ def main():
         X_cb[c] = X_cb[c].astype(str)
     print(f" features={X.shape[1]}")
 
-    # ---- 예측 (LightGBM/CatBoost) + 로지스틱 메타러너 스태킹 + Beta Calibration ----
+    # ---- 예측 (LightGBM/CatBoost) + 순수 로지스틱 메타러너 스태킹 (No Beta, No Distortion) ----
     print("Inference model...")
     if len(X):
         p_lgb = lgbm_model.predict_proba(X)[:, 1]
         p_cb = cb_model.predict_proba(X_cb)[:, 1]
         X_meta = np.column_stack([p_lgb, p_cb])
-        raw_stack = stack_model.predict_proba(X_meta)[:, 1]
-        if beta_calibrator is not None:
-            preds = beta_calibrator.predict(raw_stack)
-        else:
-            preds = raw_stack
+        preds = stack_model.predict_proba(X_meta)[:, 1]
     else:
         preds = []
     print(f" preds={len(preds)}")
