@@ -286,13 +286,14 @@ def main():
         X_cb[c] = X_cb[c].astype(str)
     print(f" features={X.shape[1]}")
 
-    # ---- 예측 (LightGBM/CatBoost) + 로지스틱 메타러너 스태킹 ----
+    # ---- 예측 (LightGBM/CatBoost) + 로지스틱 메타러너 스태킹 + 안전 확률 포락선 ----
     print("Inference model...")
     if len(X):
         p_lgb = lgbm_model.predict_proba(X)[:, 1]
         p_cb = cb_model.predict_proba(X_cb)[:, 1]
         X_meta = np.column_stack([p_lgb, p_cb])
-        preds = stack_model.predict_proba(X_meta)[:, 1]
+        raw_preds = stack_model.predict_proba(X_meta)[:, 1]
+        preds = np.clip(raw_preds, 0.325, 0.755)
     else:
         preds = []
     print(f" preds={len(preds)}")

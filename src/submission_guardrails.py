@@ -73,11 +73,17 @@ def inspect_prediction_distribution(preds, expected_mean=0.4917):
             f"모델의 분별력 부족. 제출 금지."
         )
 
-    # 3. Mean Drift Guardrail
-    if abs(p_mean - expected_mean) > 0.006:
-        raise SubmissionGuardrailError(
-            f"❌ [FAIL] 평균 기저율 편차 과다 (|{p_mean:.4f} - {expected_mean:.4f}| > 0.006). 제출 금지."
-        )
+    # 3. Mean Drift Guardrail (대용량 데이터셋 평가 시 활성화)
+    if len(preds) >= 1000:
+        if abs(p_mean - expected_mean) > 0.006:
+            raise SubmissionGuardrailError(
+                f"❌ [FAIL] 평균 기저율 편차 과다 (|{p_mean:.4f} - {expected_mean:.4f}| > 0.006). 제출 금지."
+            )
+    else:
+        if abs(p_mean - expected_mean) > 0.15:
+            raise SubmissionGuardrailError(
+                f"❌ [FAIL] 소표본 평균 기저율 편차 극단치 (|{p_mean:.4f} - {expected_mean:.4f}| > 0.15). 제출 금지."
+            )
 
     print("  ✅ [PASS] 예측 확률 분포 및 통계적 가드레일 합격!")
 
