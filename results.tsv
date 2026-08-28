@@ -78,9 +78,10 @@ v58-lgb-colsample07실험	836.35(기준)/815.01(with)/2009.23(기준)/2031.18(OO
 v59-cb-depth7실험	836.35(기준)/827.74(with)/2009.23(기준)/2014.24(OOF)		discard	experiment/v59-cb-depth7: CatBoost Depth Tuning (depth=7) 10-Fold CV Stacking — docs/v58_to_v61_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 827.74 (-8.61), (B) OOF score 2009.23 -> 2014.24 (+5.01). 홀드아웃 하락으로 기각 확정.
 v60-sym-depth7실험	836.35(기준)/839.05(with)/2009.23(기준)/2005.83(OOF)		discard	experiment/v60-sym-depth7: 대칭 깊이 제약(LGB max_depth=7 + CB depth=7) 10-Fold CV Stacking — docs/v60_to_v63_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 839.05 (+2.70), (B) OOF score 2009.23 -> 2005.83 (-3.40). OOF 점수 하락으로 기각 확정.
 v61-lgb-l1-reg실험	836.35(기준)/827.49(with)/2009.23(기준)/2027.31(OOF)		discard	experiment/v61-lgb-l1-reg: LightGBM L1 Regularization (reg_alpha=0.5) 10-Fold CV Stacking — docs/v60_to_v63_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 827.49 (-8.86), (B) OOF score 2009.23 -> 2027.31 (+18.08). 홀드아웃 하락으로 기각 확정.
-v62-cb-l2reg5	planned		planned	experiment/v62-cb-l2reg5: CatBoost Strong L2 Regularization (l2_leaf_reg=5.0) 10-Fold CV Stacking.
-v63-lgb-l2reg3	planned		planned	experiment/v63-lgb-l2reg3: LightGBM Strong L2 Regularization (reg_lambda=3.0) 10-Fold CV Stacking.
-v64-lgb-subsample07	planned		planned	experiment/v64-lgb-subsample07: LightGBM Subsample Tuning (subsample=0.7, subsample_freq=1) 10-Fold CV Stacking.
+v62-cb-l2reg5실험	836.35(기준)/832.38(with)/2009.23(기준)/2014.50(OOF)		discard	experiment/v62-cb-l2reg5: CatBoost Strong L2 Regularization (l2_leaf_reg=5.0) 10-Fold CV Stacking — docs/v62_to_v65_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 832.38 (-3.97), (B) OOF score 2009.23 -> 2014.50 (+5.27). 홀드아웃 하락으로 기각 확정.
+v63-lgb-l2reg3실험	836.35(기준)/843.55(with)/2009.23(기준)/2016.92(OOF)		keep	experiment/v63-lgb-l2reg3: LightGBM Strong L2 Regularization (reg_lambda=3.0) 10-Fold CV Stacking — docs/v62_to_v65_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 843.55 (+7.20 대폭 상승), (B) OOF score 2009.23 -> 2016.92 (+7.69 대폭 상승). 메타러너 계수: LGB=3.9438, CB=0.5636, Intercept=-2.2650. 예측 범위: [0.3250, 0.6945], Std: 0.0495, Mean: 0.4918. 5대 하드 가드레일(가중치 균형, 확률 극단치, 이중 게이트 동반 상승) 100% ALL PASS ✅ 역대 최고 신기록 달성 및 채택 확정!
+v64-lgb-subsample07실험	836.35(기준)/851.23(with)/2009.23(기준)/1997.07(OOF)		discard	experiment/v64-lgb-subsample07: LightGBM Subsample Tuning (subsample=0.7, subsample_freq=1) 10-Fold CV Stacking — docs/v62_to_v65_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 851.23 (+14.88), (B) OOF score 2009.23 -> 1997.07 (-12.16). OOF 점수 급락으로 기각 확정.
+
 
 
 
