@@ -1,6 +1,5 @@
 # script.py
 import os
-
 import joblib
 import numpy as np
 import pandas as pd
@@ -17,49 +16,23 @@ ENTITY_SPECS = {
 }
 
 
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-np.clip(z, -15.0, 15.0)))
+
+
 # =======================
-# SeasonDecompositionEncoder (순수 딕셔너리 직렬화/역직렬화)
+# 1. SeasonDecompositionEncoder (순수 딕셔너리 직렬화)
 # =======================
 
 class SeasonDecompositionEncoder:
-    """과거 시즌 동결 이력을 기반으로 행 단위 당해 시즌 증거를 복원하는 인코더."""
-
     def __init__(self, entities=("pitcher", "batter"), alpha=ALPHA, prior=None, history_tables=None):
         self.entities = list(entities)
         self.alpha = float(alpha)
         self.prior = prior
         self.history_tables = history_tables or {}
 
-    def fit(self, df, target):
-        values = np.asarray(target, dtype=float).reshape(-1)
-        self.prior = float(values.mean())
-        self.history_tables = {}
-        for entity in self.entities:
-            id_col, _, _ = ENTITY_SPECS[entity]
-            working = pd.DataFrame({
-                id_col: df[id_col].to_numpy(copy=False),
-                "__target": values,
-            })
-            table = (
-                working.dropna(subset=[id_col])
-                .groupby(id_col, sort=False)["__target"]
-                .agg(history_success="sum", history_n="count")
-            )
-            self.history_tables[entity] = table
-        return self
-
-    def to_dict(self):
-        """순수 내장 타입과 pandas DataFrame만으로 구성된 딕셔너리 반환."""
-        return {
-            "entities": self.entities,
-            "alpha": self.alpha,
-            "prior": self.prior,
-            "history_tables": self.history_tables,
-        }
-
     @classmethod
     def from_dict(cls, data):
-        """딕셔너리로부터 인코더 복원."""
         return cls(
             entities=data["entities"],
             alpha=data["alpha"],
@@ -68,9 +41,6 @@ class SeasonDecompositionEncoder:
         )
 
     def transform(self, df):
-        if self.prior is None:
-            raise RuntimeError("Encoder must be fitted before transform")
-
         derived = {}
         for entity in self.entities:
             id_col, count_col, rate_col = ENTITY_SPECS[entity]
@@ -117,33 +87,121 @@ class SeasonDecompositionEncoder:
 
 
 # =======================
-# 데이터 로드 유틸
+# 2. LatentMatchupSVDEncoder (순수 딕셔너리 직렬화)
+# =======================
+
+class LatentMatchupSVDEncoder:
+    def __init__(self, n_components=8, alpha=30.0, pitcher_map=None, batter_map=None, pitcher_factors=None, batter_factors=None, global_prior=0.5):
+        self.n_components = n_components
+        self.alpha = alpha
+        self.pitcher_map = pitcher_map or {}
+        self.batter_map = batter_map or {}
+        self.pitcher_factors = pitcher_factors
+        self.batter_factors = batter_factors
+        self.global_prior = global_prior
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            n_components=data["n_components"],
+            alpha=data["alpha"],
+            pitcher_map=data["pitcher_map"],
+            batter_map=data["batter_map"],
+            pitcher_factors=data["pitcher_factors"],
+            batter_factors=data["batter_factors"],
+            global_prior=data["global_prior"],
+        )
+
+    def transform(self, df):
+        p_ids = df["pitcher_id"].to_numpy()
+        b_ids = df["batter_id"].to_numpy()
+
+        dots = np.zeros(len(df), dtype=float)
+        p_f1 = np.zeros(len(df), dtype=float)
+        p_f2 = np.zeros(len(df), dtype=float)
+        b_f1 = np.zeros(len(df), dtype=float)
+        b_f2 = np.zeros(len(df), dtype=float)
+
+        if self.pitcher_factors is not None and self.batter_factors is not None:
+            for i in range(len(df)):
+                pid = p_ids[i]
+                bid = b_ids[i]
+                p_idx = self.pitcher_map.get(pid)
+                b_idx = self.batter_map.get(bid)
+
+                if p_idx is not None and b_idx is not None:
+                    u = self.pitcher_factors[p_idx]
+                    v = self.batter_factors[b_idx]
+                    dots[i] = np.dot(u, v)
+                    p_f1[i] = u[0]
+                    p_f2[i] = u[1]
+                    b_f1[i] = v[0]
+                    b_f2[i] = v[1]
+                elif p_idx is not None:
+                    u = self.pitcher_factors[p_idx]
+                    p_f1[i] = u[0]
+                    p_f2[i] = u[1]
+                elif b_idx is not None:
+                    v = self.batter_factors[b_idx]
+                    b_f1[i] = v[0]
+                    b_f2[i] = v[1]
+
+        return pd.DataFrame({
+            "svd_matchup_dot": dots,
+            "svd_pitcher_f1": p_f1,
+            "svd_pitcher_f2": p_f2,
+            "svd_batter_f1": b_f1,
+            "svd_batter_f2": b_f2,
+        }, index=df.index)
+
+
+# =======================
+# 3. BetaCalibrator (순수 수식 계산)
+# =======================
+
+class BetaCalibrator:
+    def __init__(self, a=1.0, b=1.0, c=0.0, eps=1e-5):
+        self.a = a
+        self.b = b
+        self.c = c
+        self.eps = eps
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            a=data["a_"],
+            b=data["b_"],
+            c=data["c_"],
+            eps=data.get("eps", 1e-5),
+        )
+
+    def predict(self, s):
+        s_safe = np.clip(np.asarray(s, dtype=float), self.eps, 1.0 - self.eps)
+        x1 = np.log(s_safe)
+        x2 = -np.log(1.0 - s_safe)
+        logit_p = self.a * x1 + self.b * x2 + self.c
+        return sigmoid(logit_p)
+
+
+# =======================
+# 데이터 로드 & 피처 엔지니어링
 # =======================
 
 def load_test(path):
-    """평가 데이터(csv) 로드. 한 행이 투구 하나."""
     df = pd.read_csv(path, encoding="utf-8-sig")
     if ID_COL not in df.columns:
-        raise ValueError(f"test 데이터에 {ID_COL} 컬럼이 없음: {list(df.columns)[:5]}")
+        raise ValueError(f"test 데이터에 {ID_COL} 컬럼이 없음")
     return df
 
 
 def load_sample_submission(path):
-    """sample_submission.csv 로드 — 제출 파일의 row_id 순서/컬럼 기준."""
     df = pd.read_csv(path, encoding="utf-8-sig")
     if list(df.columns[:2]) != [ID_COL, TARGET_COL]:
-        raise ValueError(
-            f"sample_submission 컬럼이 ({ID_COL}, {TARGET_COL})이 아님: "
-            f"{list(df.columns)}")
+        raise ValueError(f"sample_submission 컬럼이 ({ID_COL}, {TARGET_COL})이 아님")
     return df
 
 
-# =======================
-# 피처 엔지니어링 (기본 38개 파생 피처 + Season Decomposition 16개 피처 = 총 101개)
-# =======================
-
-def build_features(df, global_mean, tk_lookup, season_encoder):
-    """모델 입력 피처 생성. row_id를 제외한 원본 컬럼 + 파생 피처를 만든다."""
+def build_features(df, global_mean, tk_lookup, season_encoder, svd_encoder=None):
     df = df.copy()
 
     # 1. 기본 파생 피처
@@ -198,28 +256,25 @@ def build_features(df, global_mean, tk_lookup, season_encoder):
     for k in TK_KEYS:
         tk_lk[k] = tk_lk[k].astype(df[k].dtype)
     orig_index = df.index
-    df = df.merge(
-        tk_lk, on=TK_KEYS, how="left",
-        validate="many_to_one", sort=False,
-    )
+    df = df.merge(tk_lk, on=TK_KEYS, how="left", validate="many_to_one", sort=False)
     df.index = orig_index
     df["tk_fastball_dev"] = fb - df["tk_fastball_rate"]
     df["tk_breaking_dev"] = br - df["tk_breaking_rate"]
     df["tk_offspeed_dev"] = os_ - df["tk_offspeed_rate"]
 
-    # 2. Season Decomposition 피처 (R18 스타일 당해 시즌 분해)
+    # 2. Season Decomposition 피처
     season_fe = season_encoder.transform(df)
     res = pd.concat([df, season_fe], axis=1)
+
+    # 3. SVD Latent Matchup 피처
+    if svd_encoder is not None:
+        svd_fe = svd_encoder.transform(df)
+        res = pd.concat([res, svd_fe], axis=1)
 
     return res.drop(columns=[ID_COL], errors="ignore")
 
 
-# =======================
-# 제출 파일 생성 유틸
-# =======================
-
 def merge_predictions(sub, ids, preds):
-    """sample_submission의 row_id 순서에 맞춰 예측 확률 병합."""
     pred_map = dict(zip(ids, preds))
     values, n_missing = [], 0
     for rid, cur in zip(sub[ID_COL], sub[TARGET_COL]):
@@ -230,7 +285,7 @@ def merge_predictions(sub, ids, preds):
         else:
             values.append(p)
     if n_missing:
-        print(f" 경고: 예측이 없어 placeholder를 유지한 row_id {n_missing}건")
+        print(f" 경고: 예측 누락 {n_missing}건")
     sub[TARGET_COL] = values
     return sub
 
@@ -239,10 +294,6 @@ def save_submission(path, sub):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     sub.to_csv(path, index=False, encoding="utf-8")
 
-
-# =======================
-# main
-# =======================
 
 def main():
     TEST_DIR = "./data"
@@ -264,8 +315,10 @@ def main():
     global_mean = artifact["global_mean"]
     tk_lookup = artifact["tk_lookup"]
     
-    # 딕셔너리로부터 SeasonDecompositionEncoder 안전 복원
     season_encoder = SeasonDecompositionEncoder.from_dict(artifact["season_encoder_data"])
+    svd_encoder = LatentMatchupSVDEncoder.from_dict(artifact["svd_encoder_data"]) if "svd_encoder_data" in artifact else None
+    beta_calibrator = BetaCalibrator.from_dict(artifact["beta_calibrator_data"]) if "beta_calibrator_data" in artifact else None
+
     print(f" OK. n_features={len(all_features)}")
 
     # ---- 테스트 데이터 로드 ----
@@ -277,7 +330,7 @@ def main():
     # ---- 전처리 & 피처 엔지니어링 ----
     print("Build features...")
     ids = test[ID_COL].tolist()
-    X = build_features(test, global_mean, tk_lookup, season_encoder)
+    X = build_features(test, global_mean, tk_lookup, season_encoder, svd_encoder=svd_encoder)
     X = X[all_features]
     for c in cat_cols:
         X[c] = X[c].astype("category")
@@ -286,14 +339,17 @@ def main():
         X_cb[c] = X_cb[c].astype(str)
     print(f" features={X.shape[1]}")
 
-    # ---- 예측 (LightGBM/CatBoost) + 로지스틱 메타러너 스태킹 + 안전 확률 포락선 ----
+    # ---- 예측 (LightGBM/CatBoost) + 로지스틱 메타러너 스태킹 + Beta Calibration ----
     print("Inference model...")
     if len(X):
         p_lgb = lgbm_model.predict_proba(X)[:, 1]
         p_cb = cb_model.predict_proba(X_cb)[:, 1]
         X_meta = np.column_stack([p_lgb, p_cb])
-        raw_preds = stack_model.predict_proba(X_meta)[:, 1]
-        preds = np.clip(raw_preds, 0.325, 0.755)
+        raw_stack = stack_model.predict_proba(X_meta)[:, 1]
+        if beta_calibrator is not None:
+            preds = beta_calibrator.predict(raw_stack)
+        else:
+            preds = raw_stack
     else:
         preds = []
     print(f" preds={len(preds)}")
