@@ -67,8 +67,11 @@ v47-platoon-gap실험	836.35(기준)/818.81(with)/2009.23(기준)/2013.63(OOF)		
 v48-dynamic-smooth실험	836.35(기준)/807.08(with)/2009.23(기준)/2011.88(OOF)		discard	experiment/v48-dynamic-smooth: 표본 크기 연동 가변 스무딩(k_dynamic) 피처 추가 — docs/v47_to_v50_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 807.08 (-29.27), (B) OOF score 2009.23 -> 2011.88 (+2.65). 메타러너 계수: LGB=5.02, CB=-0.57 (CatBoost 음수 붕괴). 기각 확정.
 v49-fatigue-decay실험	836.35(기준)/829.63(with)/2009.23(기준)/2004.82(OOF)		discard	experiment/v49-fatigue-decay: 누적 이닝 피로도 지수 감쇠 피처 추가 — docs/v47_to_v50_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 829.63 (-6.72), (B) OOF score 2009.23 -> 2004.82 (-4.41). 메타러너 계수: LGB=4.41, CB=0.08 (CatBoost 잠식). 기각 확정.
 v50-safe-10fold-stacking실험	836.35(기준)/839.62(with)/2009.23(기준)/2015.25(OOF)		keep	experiment/v50-safe-10fold-stacking: 10-Fold CV 고밀도 스태킹 + 안전 확률 포락선 (Safe 10-Fold Stacking) — docs/v50_safe_10fold_stacking_diagnostic.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 839.62 (+3.27 상승), (B) OOF score 2009.23 -> 2015.25 (+6.02 상승). 메타러너 계수: LGB=3.8782, CB=0.6278, Intercept=-2.2643. 예측 범위: [0.3250, 0.6839], Std: 0.0494, Mean: 0.4917. 5대 하드 가드레일(가중치 균형, 확률 극단치, 이중 게이트 동반 상승) 100% ALL PASS ✅ 채택 확정!
-v51-pitchmix-entropy	planned		planned	experiment/v51-pitchmix-entropy: 구종 다변성 섀넌 엔트로피(pitchmix_entropy) 피처 추가.
-v52-7fold-stacking	planned		planned	experiment/v52-7fold-stacking: 7-Fold CV 황금비 스태킹 메타러너 검증.
+v51-pitchmix-entropy실험	836.35(기준)/824.71(with)/2009.23(기준)/2019.78(OOF)		discard	experiment/v51-pitchmix-entropy: 구종 다변성 섀넌 엔트로피 피처 추가 — docs/v51_to_v55_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 824.71 (-11.64), (B) OOF score 2009.23 -> 2019.78 (+10.55). 메타러너 계수: LGB=4.33, CB=0.14 (CatBoost 가중치 하한선 0.15 이탈). 기각 확정.
+v52-7fold-stacking실험	836.35(기준)/835.54(with)/2009.23(기준)/2009.76(OOF)		discard	experiment/v52-7fold-stacking: 7-Fold CV 황금비 스태킹 — docs/v51_to_v55_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 835.54 (-0.81), (B) OOF score 2009.23 -> 2009.76 (+0.53). 홀드아웃 점수 소폭 하락으로 기각 확정.
+v53-15fold-stacking	planned		planned	experiment/v53-15fold-stacking: 15-Fold CV Ultra-High Density Stacking (Fold당 93.3% 훈련 데이터 기반 OOF).
+v54-extratrees-10fold	planned		planned	experiment/v54-extratrees-10fold: LightGBM ExtraTrees Mode + CatBoost 10-Fold Stacking.
+
 
 
 
