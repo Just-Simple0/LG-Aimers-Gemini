@@ -63,10 +63,11 @@ v43-spline-local-calibration실험	836.35(기준)/831.52(with)/2009.23(기준)/2
 v44-trackman-velo-spin실험	836.35(기준)/819.31(with)/2009.23(기준)/2004.04(OOF)		discard	experiment/v44-trackman-velo-spin: Trackman 물리 속구 구속 및 회전수 편차 피처 추가 — docs/v44_to_v48_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 819.31 (-17.04), (B) OOF score 2009.23 -> 2004.04 (-5.19). 메타러너 계수: LGB=4.44, CB=0.04 (CatBoost 잠식). 기각 확정.
 v45-count-leverage-stress실험	836.35(기준)/797.41(with)/2009.23(기준)/2016.95(OOF)		discard	experiment/v45-count-leverage-stress: 카운트 x 레버리지 3차원 스트레스 지표 추가 — docs/v44_to_v48_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 797.41 (-38.94), (B) OOF score 2009.23 -> 2016.95 (+7.72). 메타러너 계수: LGB=5.13, CB=-0.71 (CatBoost 음수 붕괴). 기각 확정.
 v46-10fold-stacking실험	836.35(기준)/839.58(with)/2009.23(기준)/2015.60(OOF)		discard	experiment/v46-10fold-stacking: 10-Fold CV 고밀도 스태킹 (90% 데이터 훈련 기반 OOF 생성) — docs/v44_to_v48_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 839.58 (+3.23), (B) OOF score 2009.23 -> 2015.60 (+6.37). 메타러너 계수: LGB=3.88, CB=0.63. 양쪽 게이트 모두 동반 상승했으나, 예측 최솟값 min=0.3110(<0.320) 이탈로 가드레일 안전 차단.
-v47-platoon-gap	planned		planned	experiment/v47-platoon-gap: 플래툰 핸디드니스 분리 시즌 분해(platoon_interaction_gap) 피처 추가.
-v48-dynamic-smooth	planned		planned	experiment/v48-dynamic-smooth: 표본 크기 연동 가변 스무딩(k_dynamic) 피처 추가.
-v49-fatigue-decay	planned		planned	experiment/v49-fatigue-decay: 누적 이닝 피로도 지수 감쇠(pitch_fatigue_decay) 피처 추가.
+v47-platoon-gap실험	836.35(기준)/818.81(with)/2009.23(기준)/2013.63(OOF)		discard	experiment/v47-platoon-gap: 플래툰 분리 시즌 분해 피처 추가 — docs/v47_to_v50_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 818.81 (-17.54), (B) OOF score 2009.23 -> 2013.63 (+4.40). 메타러너 계수: LGB=4.75, CB=-0.28 (CatBoost 음수 붕괴). 기각 확정.
+v48-dynamic-smooth실험	836.35(기준)/807.08(with)/2009.23(기준)/2011.88(OOF)		discard	experiment/v48-dynamic-smooth: 표본 크기 연동 가변 스무딩(k_dynamic) 피처 추가 — docs/v47_to_v50_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 807.08 (-29.27), (B) OOF score 2009.23 -> 2011.88 (+2.65). 메타러너 계수: LGB=5.02, CB=-0.57 (CatBoost 음수 붕괴). 기각 확정.
+v49-fatigue-decay실험	836.35(기준)/829.63(with)/2009.23(기준)/2004.82(OOF)		discard	experiment/v49-fatigue-decay: 누적 이닝 피로도 지수 감쇠 피처 추가 — docs/v47_to_v50_autonomous_runner.py. 이중게이트 결과: (A) 2024 홀드아웃 836.35 -> 829.63 (-6.72), (B) OOF score 2009.23 -> 2004.82 (-4.41). 메타러너 계수: LGB=4.41, CB=0.08 (CatBoost 잠식). 기각 확정.
 v50-safe-10fold-stacking	planned		planned	experiment/v50-safe-10fold-stacking: 10-Fold CV 스태킹에 안전 확률 클리핑(p in [0.325, 0.755])을 결합하여 5대 가드레일 100% 합격 검증.
+
 
 
 
