@@ -39,7 +39,7 @@ def inspect_meta_learner_weights(lgb_weight, cb_weight, intercept):
     print("  ✅ [PASS] 메타러너 가중치 균형 합격!")
 
 
-def inspect_prediction_distribution(preds, expected_mean=0.5238):
+def inspect_prediction_distribution(preds, expected_mean=0.4917):
     """예측 확률 분포 및 통계적 가드레일 검수."""
     print("\n[가드레일 2/3] 예측 확률 분포 및 극단치 검수 중...")
     p_min = float(np.min(preds))
